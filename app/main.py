@@ -7,7 +7,9 @@ logger: Final = logging.getLogger(__name__)
 
 
 async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    pass
+    logger.info("Client connected")
+    writer.write(b"+PONG\r\n")
+    await writer.drain()
 
 
 async def main() -> None:
