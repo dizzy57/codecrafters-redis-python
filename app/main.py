@@ -5,6 +5,8 @@ import logging
 import sys
 from typing import Final
 
+from app.protocol import encode, read_command
+
 logger: Final = logging.getLogger(__name__)
 ctx_client: Final = contextvars.ContextVar("client", default="SERVER")
 
@@ -12,12 +14,17 @@ ctx_client: Final = contextvars.ContextVar("client", default="SERVER")
 async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     ctx_client.set(f"client={writer.get_extra_info("peername")}")
     logger.info("Client connected")
-    while True:
-        buf = await reader.read(1024)
-        logger.debug("Received %r", buf)
-        if not buf:
-            break
-        writer.write(b"+PONG\r\n")
+    async for command in read_command(reader):
+        logger.debug("Received %r", command)
+
+        command[0] = command[0].upper()
+        match command:
+            case [b"PING"]:
+                writer.write(b"+PONG\r\n")
+            case [b"ECHO", x]:
+                writer.writelines(encode(x))
+            case _:
+                writer.write(b"-ERR unknown command\r\n")
         await writer.drain()
     logger.info("Client disconnected")
 
