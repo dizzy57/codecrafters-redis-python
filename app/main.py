@@ -8,8 +8,14 @@ logger: Final = logging.getLogger(__name__)
 
 async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     logger.info("Client connected")
-    writer.write(b"+PONG\r\n")
-    await writer.drain()
+    while True:
+        buf = await reader.read(1024)
+        logger.debug("Received %r", buf)
+        if not buf:
+            break
+        writer.write(b"+PONG\r\n")
+        await writer.drain()
+    logger.info("Client disconnected")
 
 
 async def main() -> None:
