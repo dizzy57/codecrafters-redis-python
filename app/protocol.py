@@ -1,9 +1,17 @@
 import asyncio
+import functools
 from collections.abc import AsyncGenerator, Generator
 from typing import Final
 
 CRLF: Final = b"\r\n"
 type Command = list[bytes]
+
+
+class NullString:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "(nil)"
 
 
 async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
@@ -27,9 +35,20 @@ async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
         yield command
 
 
-def encode(x: bytes) -> Generator[bytes]:
+@functools.singledispatch
+def encode(x: bytes | NullString) -> Generator[bytes]:
+    raise NotImplementedError
+
+
+@encode.register
+def _(x: bytes) -> Generator[bytes]:
     yield b"$"
     yield str(len(x)).encode()
     yield CRLF
     yield x
     yield CRLF
+
+
+@encode.register
+def _(x: NullString) -> Generator[bytes]:
+    yield b"$-1\r\n"

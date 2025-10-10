@@ -6,32 +6,50 @@ import sys
 from typing import Final
 
 from app.protocol import encode, read_command
+from app.storage import Storage
 
 logger: Final = logging.getLogger(__name__)
 ctx_client: Final = contextvars.ContextVar("client", default="SERVER")
 
 
-async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    ctx_client.set(f"client={writer.get_extra_info("peername")}")
-    logger.info("Client connected")
-    async for command in read_command(reader):
-        logger.debug("Received %r", command)
+class Redis:
+    def __init__(self, storage: Storage) -> None:
+        self.storage = storage
 
-        command[0] = command[0].upper()
-        match command:
-            case [b"PING"]:
-                writer.write(b"+PONG\r\n")
-            case [b"ECHO", x]:
-                writer.writelines(encode(x))
-            case _:
-                writer.write(b"-ERR unknown command\r\n")
-        await writer.drain()
-    logger.info("Client disconnected")
+    async def client_handler(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        ctx_client.set(f"client={writer.get_extra_info("peername")}")
+        logger.info("Client connected")
+        async for command in read_command(reader):
+            logger.debug("Received %r", command)
+
+            command[0] = command[0].upper()
+            match command:
+                case [b"PING"]:
+                    writer.write(b"+PONG\r\n")
+                case [b"ECHO", x]:
+                    writer.writelines(encode(x))
+                case [b"SET", k, v]:
+                    self.storage.set(k, v)
+                    writer.write(b"+OK\r\n")
+                case [b"GET", k]:
+                    writer.writelines(encode(self.storage.get(k)))
+                case _:
+                    writer.write(b"-ERR unknown command\r\n")
+            await writer.drain()
+        logger.info("Client disconnected")
 
 
 async def main() -> None:
+    logger.info("Initializing server")
+    storage = Storage()
+    redis = Redis(storage)
+
     logger.info("Starting server")
-    server = await asyncio.start_server(handler, "localhost", 6379)
+    server = await asyncio.start_server(redis.client_handler, "localhost", 6379)
     async with server:
         await server.serve_forever()
 
