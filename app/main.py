@@ -3,8 +3,10 @@ import contextvars
 import copy
 import logging
 import sys
+from datetime import timedelta
 from typing import Final
 
+from app.keywords import Keyword
 from app.protocol import encode, read_command
 from app.storage import Storage
 
@@ -23,19 +25,24 @@ class Redis:
     ) -> None:
         ctx_client.set(f"client={writer.get_extra_info("peername")}")
         logger.info("Client connected")
+        kw = Keyword
         async for command in read_command(reader):
             logger.debug("Received %r", command)
-
-            command[0] = command[0].upper()
             match command:
-                case [b"PING"]:
+                case [kw.PING]:
                     writer.write(b"+PONG\r\n")
-                case [b"ECHO", x]:
+                case [kw.ECHO, x]:
                     writer.writelines(encode(x))
-                case [b"SET", k, v]:
+                case [kw.SET, k, v]:
                     self.storage.set(k, v)
                     writer.write(b"+OK\r\n")
-                case [b"GET", k]:
+                case [kw.SET, k, v, kw.EX, s]:
+                    self.storage.set(k, v, ttl=timedelta(seconds=int(s)))
+                    writer.write(b"+OK\r\n")
+                case [kw.SET, k, v, kw.PX, ms]:
+                    self.storage.set(k, v, ttl=timedelta(milliseconds=int(ms)))
+                    writer.write(b"+OK\r\n")
+                case [kw.GET, k]:
                     writer.writelines(encode(self.storage.get(k)))
                 case _:
                     writer.write(b"-ERR unknown command\r\n")
@@ -45,7 +52,8 @@ class Redis:
 
 async def main() -> None:
     logger.info("Initializing server")
-    storage = Storage()
+    loop = asyncio.get_running_loop()
+    storage = Storage(loop)
     redis = Redis(storage)
 
     logger.info("Starting server")
