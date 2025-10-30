@@ -20,8 +20,8 @@ class List:
     def __init__(self) -> None:
         self.l: list[bytes] = []
 
-    def rpush(self, v: bytes) -> int:
-        self.l.append(v)
+    def rpush(self, vs: list[bytes]) -> int:
+        self.l.extend(vs)
         return len(self.l)
 
 
@@ -64,8 +64,8 @@ class Storage:
                 logger.debug("_delete_if_expired del_ttl %r", k)
                 del self.kv[k]
 
-    def rpush(self, k: bytes, v: bytes) -> int:
+    def rpush(self, k: bytes, vs: list[bytes]) -> int:
         l = self.kv.setdefault(k, List())
         if not isinstance(l, List):
             raise RedisError(f"key {k!r} is not list: {l!r}")
-        return l.rpush(v)
+        return l.rpush(vs)

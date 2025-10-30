@@ -45,8 +45,8 @@ class Redis:
                         writer.write(b"+OK\r\n")
                     case [kw.GET, k]:
                         writer.writelines(encode(self.storage.get(k)))
-                    case [kw.RPUSH, k, v]:
-                        writer.writelines(encode(self.storage.rpush(k, v)))
+                    case [kw.RPUSH, k, v, *vs]:
+                        writer.writelines(encode(self.storage.rpush(k, [v, *vs])))
                     case _:
                         raise RedisError("unknown command")
             except RedisError as e:
