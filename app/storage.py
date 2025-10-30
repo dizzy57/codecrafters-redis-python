@@ -1,8 +1,10 @@
+import abc
 import asyncio
 import dataclasses
 import datetime
+import functools
 import logging
-from typing import Final
+from typing import Final, Callable, cast
 
 from app.protocol import NullString, RedisError
 
@@ -48,14 +50,66 @@ class List:
         del self.l[:n]
         return res
 
+    @property
+    def empty(self) -> bool:
+        return not self.l
+
 
 type Value = String | List
+
+
+class BlockingRequest(abc.ABC):
+    def __init__(self) -> None:
+        self.future = asyncio.get_running_loop().create_future()
+
+    @abc.abstractmethod
+    def notify(self, v: Value) -> bool: ...
+
+
+class BLPopRequest(BlockingRequest):
+    def notify(self, v: Value) -> bool:
+        match v:
+            case List(empty=False):
+                self.future.set_result(v.lpop())
+                return True
+        return False
+
+
+class BlockingDispatcher:
+    def __init__(self) -> None:
+        self.kv: dict[bytes, list[BlockingRequest]] = {}
+
+    def add_block_request(self, k: bytes, request: BlockingRequest) -> None:
+        l = self.kv.setdefault(k, [])
+        l.append(request)
+
+    def notify_key(self, k: bytes, v: Value) -> None:
+        l = self.kv.get(k, [])
+        for i, r in enumerate(l):
+            if r.notify(v):
+                break
+        else:
+            return
+        del l[i]
+
+
+def notify_blocked[*Ts, T](
+    f: Callable[["Storage", bytes, *Ts], T],
+) -> Callable[["Storage", bytes, *Ts], T]:
+    @functools.wraps(f)
+    def wrapper(self: "Storage", k: bytes, *args: *Ts) -> T:
+        res = f(self, k, *args)
+        self.blocking.notify_key(k, self.kv[k])
+        return res
+
+    return wrapper
 
 
 class Storage:
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
         self.kv: dict[bytes, Value] = {}
+        self.blocking = BlockingDispatcher()
 
     def set(self, k: bytes, v: bytes, *, ttl: datetime.timedelta | None = None) -> None:
         logger.debug("SET %r %r, ttl=%r", k, v, ttl)
@@ -88,6 +142,7 @@ class Storage:
                 logger.debug("_delete_if_expired del_ttl %r", k)
                 del self.kv[k]
 
+    @notify_blocked
     def rpush(self, k: bytes, xs: list[bytes]) -> int:
         v = self.kv.setdefault(k, List())
         if not isinstance(v, List):
@@ -110,6 +165,7 @@ class Storage:
             case _:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
 
+    @notify_blocked
     def lpush(self, k: bytes, xs: list[bytes]) -> int:
         v = self.kv.setdefault(k, List())
         if not isinstance(v, List):
@@ -150,3 +206,19 @@ class Storage:
                 return v.lpop_many(ni)
             case _:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
+
+    async def blpop(self, k: bytes) -> tuple[bytes, bytes]:
+        v = self.kv.get(k)
+        match v:
+            case None:
+                pass
+            case List(empty=True):
+                pass
+            case List():
+                return k, cast(bytes, v.lpop())
+            case _:
+                raise RedisError(f"key {k!r} is not list: {v!r}")
+        request = BLPopRequest()
+        self.blocking.add_block_request(k, request)
+        res = await request.future
+        return [k, res]

@@ -77,6 +77,7 @@ def _(x: int) -> Generator[bytes]:
 
 
 @encode.register(list)
+@encode.register(tuple)
 def _(xs: Sequence[Primitive]) -> Generator[bytes]:
     yield b"*"
     yield str(len(xs)).encode()

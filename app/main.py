@@ -57,6 +57,8 @@ class Redis:
                         writer.writelines(encode(self.storage.lpop(k)))
                     case [kw.LPOP, k, n]:
                         writer.writelines(encode(self.storage.lpop_many(k, n)))
+                    case [kw.BLPOP, k, b"0"]:
+                        writer.writelines(encode(await self.storage.blpop(k)))
                     case _:
                         raise RedisError("unknown command")
             except RedisError as e:
