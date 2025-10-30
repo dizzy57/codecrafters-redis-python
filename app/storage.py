@@ -25,7 +25,8 @@ class List:
         return len(self.l)
 
     def lrange(self, l: int, r: int) -> list[bytes]:
-        return self.l[l : r + 1]
+        inclusive_r = None if r == -1 else r + 1
+        return self.l[l:inclusive_r]
 
 
 type Value = String | List
