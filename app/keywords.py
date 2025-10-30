@@ -27,3 +27,4 @@ class Keyword(CaseInsensitiveBytesEnum):
     PX = auto()
     RPUSH = auto()
     LRANGE = auto()
+    LPUSH = auto()

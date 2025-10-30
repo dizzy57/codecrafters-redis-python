@@ -28,6 +28,10 @@ class List:
         inclusive_r = None if r == -1 else r + 1
         return self.l[l:inclusive_r]
 
+    def lpush(self, xs: list[bytes]) -> int:
+        self.l[:0] = reversed(xs)
+        return len(self.l)
+
 
 type Value = String | List
 
@@ -89,3 +93,9 @@ class Storage:
                 return v.lrange(li, ri)
             case _:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
+
+    def lpush(self, k: bytes, xs: list[bytes]) -> int:
+        v = self.kv.setdefault(k, List())
+        if not isinstance(v, List):
+            raise RedisError(f"key {k!r} is not list: {v!r}")
+        return v.lpush(xs)
