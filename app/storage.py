@@ -41,6 +41,13 @@ class List:
         except IndexError:
             return NullString()
 
+    def lpop_many(self, n: int) -> list[bytes] | NullString:
+        if not self.l:
+            return NullString()
+        res = self.l[:n]
+        del self.l[:n]
+        return res
+
 
 type Value = String | List
 
@@ -126,5 +133,20 @@ class Storage:
                 return NullString()
             case List():
                 return v.lpop()
+            case _:
+                raise RedisError(f"key {k!r} is not list: {v!r}")
+
+    def lpop_many(self, k: bytes, n: bytes) -> list[bytes] | NullString:
+        try:
+            ni = int(n)
+        except ValueError as e:
+            raise RedisError(f"unable to parse integer {n=}") from e
+
+        v = self.kv.get(k)
+        match v:
+            case None:
+                return NullString()
+            case List():
+                return v.lpop_many(ni)
             case _:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
