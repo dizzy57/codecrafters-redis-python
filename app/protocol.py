@@ -14,6 +14,13 @@ class NullString:
         return "(nil)"
 
 
+class NullArray:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "(nil)"
+
+
 class RedisError(Exception):
     def __init__(self, message: str):
         self.message: Final = message
@@ -44,7 +51,9 @@ type Primitive = bytes | NullString | int
 
 
 @functools.singledispatch
-def encode(x: RedisError | Primitive | Sequence[Primitive]) -> Generator[bytes]:
+def encode(
+    x: RedisError | Primitive | Sequence[Primitive] | NullArray,
+) -> Generator[bytes]:
     raise NotImplementedError
 
 
@@ -84,3 +93,8 @@ def _(xs: Sequence[Primitive]) -> Generator[bytes]:
     yield CRLF
     for x in xs:
         yield from encode(x)
+
+
+@encode.register
+def _(x: NullArray) -> Generator[bytes]:
+    yield b"*-1\r\n"

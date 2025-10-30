@@ -6,7 +6,7 @@ import functools
 import logging
 from typing import Final, Callable, cast
 
-from app.protocol import NullString, RedisError
+from app.protocol import NullString, RedisError, NullArray
 
 logger: Final = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -82,6 +82,10 @@ class BlockingDispatcher:
     def add_block_request(self, k: bytes, request: BlockingRequest) -> None:
         l = self.kv.setdefault(k, [])
         l.append(request)
+
+    def remove_block_request(self, k: bytes, request: BlockingRequest) -> None:
+        l = self.kv.setdefault(k, [])
+        l.remove(request)
 
     def notify_key(self, k: bytes, v: Value) -> None:
         l = self.kv.get(k, [])
@@ -207,7 +211,12 @@ class Storage:
             case _:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
 
-    async def blpop(self, k: bytes) -> tuple[bytes, bytes]:
+    async def blpop(self, k: bytes, timeout: bytes) -> tuple[bytes, bytes] | NullArray:
+        try:
+            timeoutf = float(timeout)
+        except ValueError as e:
+            raise RedisError(f"unable to parse {timeout=}") from e
+
         v = self.kv.get(k)
         match v:
             case None:
@@ -220,5 +229,11 @@ class Storage:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
         request = BLPopRequest()
         self.blocking.add_block_request(k, request)
-        res = await request.future
-        return [k, res]
+
+        done, pending = await asyncio.wait(
+            [request.future], timeout=None if timeoutf == 0 else timeoutf
+        )
+        if done:
+            return k, done.pop().result()
+        self.blocking.remove_block_request(k, request)
+        return NullArray()
