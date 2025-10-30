@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Final
 
 from app.keywords import Keyword
-from app.protocol import encode, read_command
+from app.protocol import encode, read_command, RedisError
 from app.storage import Storage
 
 logger: Final = logging.getLogger(__name__)
@@ -28,24 +28,30 @@ class Redis:
         kw = Keyword
         async for command in read_command(reader):
             logger.debug("Received %r", command)
-            match command:
-                case [kw.PING]:
-                    writer.write(b"+PONG\r\n")
-                case [kw.ECHO, x]:
-                    writer.writelines(encode(x))
-                case [kw.SET, k, v]:
-                    self.storage.set(k, v)
-                    writer.write(b"+OK\r\n")
-                case [kw.SET, k, v, kw.EX, s]:
-                    self.storage.set(k, v, ttl=timedelta(seconds=int(s)))
-                    writer.write(b"+OK\r\n")
-                case [kw.SET, k, v, kw.PX, ms]:
-                    self.storage.set(k, v, ttl=timedelta(milliseconds=int(ms)))
-                    writer.write(b"+OK\r\n")
-                case [kw.GET, k]:
-                    writer.writelines(encode(self.storage.get(k)))
-                case _:
-                    writer.write(b"-ERR unknown command\r\n")
+            try:
+                match command:
+                    case [kw.PING]:
+                        writer.write(b"+PONG\r\n")
+                    case [kw.ECHO, x]:
+                        writer.writelines(encode(x))
+                    case [kw.SET, k, v]:
+                        self.storage.set(k, v)
+                        writer.write(b"+OK\r\n")
+                    case [kw.SET, k, v, kw.EX, s]:
+                        self.storage.set(k, v, ttl=timedelta(seconds=int(s)))
+                        writer.write(b"+OK\r\n")
+                    case [kw.SET, k, v, kw.PX, ms]:
+                        self.storage.set(k, v, ttl=timedelta(milliseconds=int(ms)))
+                        writer.write(b"+OK\r\n")
+                    case [kw.GET, k]:
+                        writer.writelines(encode(self.storage.get(k)))
+                    case [kw.RPUSH, k, v]:
+                        writer.writelines(encode(self.storage.rpush(k, v)))
+                    case _:
+                        raise RedisError("unknown command")
+            except RedisError as e:
+                logger.exception("returning error")
+                writer.writelines(encode(e))
             await writer.drain()
         logger.info("Client disconnected")
 
@@ -78,4 +84,7 @@ if __name__ == "__main__":
     for h in logging.getLogger().handlers:
         h.addFilter(filter_add_context)
 
-    asyncio.run(main())
+    asyncio.run(
+        main(),
+        debug=True,
+    )

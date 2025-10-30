@@ -14,6 +14,11 @@ class NullString:
         return "(nil)"
 
 
+class RedisError(Exception):
+    def __init__(self, message: str):
+        self.message: Final = message
+
+
 async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
     while True:
         star = await reader.read(1)
@@ -36,7 +41,7 @@ async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
 
 
 @functools.singledispatch
-def encode(x: bytes | NullString) -> Generator[bytes]:
+def encode(x: bytes | NullString | RedisError | int) -> Generator[bytes]:
     raise NotImplementedError
 
 
@@ -52,3 +57,17 @@ def _(x: bytes) -> Generator[bytes]:
 @encode.register
 def _(x: NullString) -> Generator[bytes]:
     yield b"$-1\r\n"
+
+
+@encode.register
+def _(x: RedisError) -> Generator[bytes]:
+    yield b"-ERR"
+    yield x.message.encode()
+    yield CRLF
+
+
+@encode.register
+def _(x: int) -> Generator[bytes]:
+    yield b":"
+    yield str(x).encode()
+    yield CRLF

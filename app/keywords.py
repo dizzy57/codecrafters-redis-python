@@ -25,3 +25,4 @@ class Keyword(CaseInsensitiveBytesEnum):
     GET = auto()
     EX = auto()
     PX = auto()
+    RPUSH = auto()
