@@ -51,6 +51,9 @@ class Redis:
                         writer.writelines(encode(self.storage.lrange(k, l, r)))
                     case [kw.LPUSH, k, x, *xs]:
                         writer.writelines(encode(self.storage.lpush(k, [x, *xs])))
+                    case [kw.LLEN, k]:
+                        writer.writelines(encode(self.storage.llen(k)))
+
                     case _:
                         raise RedisError("unknown command")
             except RedisError as e:

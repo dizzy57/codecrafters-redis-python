@@ -32,6 +32,9 @@ class List:
         self.l[:0] = reversed(xs)
         return len(self.l)
 
+    def llen(self) -> int:
+        return len(self.l)
+
 
 type Value = String | List
 
@@ -99,3 +102,13 @@ class Storage:
         if not isinstance(v, List):
             raise RedisError(f"key {k!r} is not list: {v!r}")
         return v.lpush(xs)
+
+    def llen(self, k: bytes) -> int:
+        v = self.kv.get(k)
+        match v:
+            case None:
+                return 0
+            case List():
+                return v.llen()
+            case _:
+                raise RedisError(f"key {k!r} is not list: {v!r}")
