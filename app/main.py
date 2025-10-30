@@ -34,19 +34,21 @@ class Redis:
                         writer.write(b"+PONG\r\n")
                     case [kw.ECHO, x]:
                         writer.writelines(encode(x))
-                    case [kw.SET, k, v]:
-                        self.storage.set(k, v)
+                    case [kw.SET, k, x]:
+                        self.storage.set(k, x)
                         writer.write(b"+OK\r\n")
-                    case [kw.SET, k, v, kw.EX, s]:
-                        self.storage.set(k, v, ttl=timedelta(seconds=int(s)))
+                    case [kw.SET, k, x, kw.EX, s]:
+                        self.storage.set(k, x, ttl=timedelta(seconds=int(s)))
                         writer.write(b"+OK\r\n")
-                    case [kw.SET, k, v, kw.PX, ms]:
-                        self.storage.set(k, v, ttl=timedelta(milliseconds=int(ms)))
+                    case [kw.SET, k, x, kw.PX, ms]:
+                        self.storage.set(k, x, ttl=timedelta(milliseconds=int(ms)))
                         writer.write(b"+OK\r\n")
                     case [kw.GET, k]:
                         writer.writelines(encode(self.storage.get(k)))
-                    case [kw.RPUSH, k, v, *vs]:
-                        writer.writelines(encode(self.storage.rpush(k, [v, *vs])))
+                    case [kw.RPUSH, k, x, *xs]:
+                        writer.writelines(encode(self.storage.rpush(k, [x, *xs])))
+                    case [kw.LRANGE, k, l, r]:
+                        writer.writelines(encode(self.storage.lrange(k, l, r)))
                     case _:
                         raise RedisError("unknown command")
             except RedisError as e:

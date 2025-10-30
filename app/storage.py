@@ -20,9 +20,12 @@ class List:
     def __init__(self) -> None:
         self.l: list[bytes] = []
 
-    def rpush(self, vs: list[bytes]) -> int:
-        self.l.extend(vs)
+    def rpush(self, xs: list[bytes]) -> int:
+        self.l.extend(xs)
         return len(self.l)
+
+    def lrange(self, l: int, r: int) -> list[bytes]:
+        return self.l[l : r + 1]
 
 
 type Value = String | List
@@ -64,8 +67,24 @@ class Storage:
                 logger.debug("_delete_if_expired del_ttl %r", k)
                 del self.kv[k]
 
-    def rpush(self, k: bytes, vs: list[bytes]) -> int:
-        l = self.kv.setdefault(k, List())
-        if not isinstance(l, List):
-            raise RedisError(f"key {k!r} is not list: {l!r}")
-        return l.rpush(vs)
+    def rpush(self, k: bytes, xs: list[bytes]) -> int:
+        v = self.kv.setdefault(k, List())
+        if not isinstance(v, List):
+            raise RedisError(f"key {k!r} is not list: {v!r}")
+        return v.rpush(xs)
+
+    def lrange(self, k: bytes, l: bytes, r: bytes) -> list[bytes]:
+        try:
+            li = int(l)
+            ri = int(r)
+        except ValueError as e:
+            raise RedisError(f"unable to parse integer {l=} {r=}") from e
+
+        v = self.kv.get(k)
+        match v:
+            case None:
+                return []
+            case List():
+                return v.lrange(li, ri)
+            case _:
+                raise RedisError(f"key {k!r} is not list: {v!r}")
