@@ -35,6 +35,12 @@ class List:
     def llen(self) -> int:
         return len(self.l)
 
+    def lpop(self) -> bytes | NullString:
+        try:
+            return self.l.pop(0)
+        except IndexError:
+            return NullString()
+
 
 type Value = String | List
 
@@ -110,5 +116,15 @@ class Storage:
                 return 0
             case List():
                 return v.llen()
+            case _:
+                raise RedisError(f"key {k!r} is not list: {v!r}")
+
+    def lpop(self, k: bytes) -> bytes | NullString:
+        v = self.kv.get(k)
+        match v:
+            case None:
+                return NullString()
+            case List():
+                return v.lpop()
             case _:
                 raise RedisError(f"key {k!r} is not list: {v!r}")
