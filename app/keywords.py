@@ -32,3 +32,4 @@ class Keyword(CaseInsensitiveBytesEnum):
     LPOP = auto()
     BLPOP = auto()
     TYPE = auto()
+    XADD = auto()

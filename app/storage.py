@@ -58,7 +58,24 @@ class List:
         return not self.l
 
 
-type Value = String | List
+@dataclasses.dataclass(frozen=True, slots=True)
+class StreamEntry:
+    id: bytes
+    kv: list[bytes]
+
+
+class Stream:
+    type: ClassVar = SimpleString("stream")
+
+    def __init__(self) -> None:
+        self.l: list[StreamEntry] = []
+
+    def xadd(self, id_: bytes, kv: list[bytes]) -> bytes:
+        self.l.append(StreamEntry(id_, kv))
+        return id_
+
+
+type Value = String | List | Stream
 
 
 class BlockingRequest(abc.ABC):
@@ -246,3 +263,12 @@ class Storage:
         if v is None:
             return SimpleString("none")
         return v.type
+
+    def xadd(self, k: bytes, id_: bytes, kv: list[bytes]) -> bytes:
+        if len(kv) % 2:
+            raise RedisError(f"key-value list of odd length {kv=}")
+
+        v = self.kv.setdefault(k, Stream())
+        if not isinstance(v, Stream):
+            raise RedisError(f"key {k!r} is not a stream: {v!r}")
+        return v.xadd(id_, kv)

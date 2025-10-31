@@ -74,6 +74,8 @@ async def dispatch_command(command: list[bytes], storage: Storage) -> Encodeable
             return await storage.blpop(k, timeout)
         case [kw.TYPE, k]:
             return storage.type(k)
+        case [kw.XADD, k, id_, *kv]:
+            return storage.xadd(k, id_, kv)
         case _:
             raise RedisError("unknown command")
 
