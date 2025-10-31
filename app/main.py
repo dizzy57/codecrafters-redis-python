@@ -11,6 +11,7 @@ from app.protocol import encode, read_command, RedisError, SimpleString, Encodea
 from app.storage import Storage
 
 logger: Final = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)
 ctx_client: Final = contextvars.ContextVar("client", default="SERVER")
 
 PONG = SimpleString("PONG")
@@ -74,8 +75,8 @@ async def dispatch_command(command: list[bytes], storage: Storage) -> Encodeable
             return await storage.blpop(k, timeout)
         case [kw.TYPE, k]:
             return storage.type(k)
-        case [kw.XADD, k, id_, *kv]:
-            return storage.xadd(k, id_, kv)
+        case [kw.XADD, k, id_or_template, *kv]:
+            return storage.xadd(k, id_or_template, kv)
         case _:
             raise RedisError("unknown command")
 

@@ -63,6 +63,9 @@ class StreamId:
     time: int
     sequence: int
 
+    def __bytes__(self) -> bytes:
+        return f"{self.time}-{self.sequence}".encode()
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class StreamEntry:
@@ -79,6 +82,11 @@ class Stream:
     def _generate_id(self, id_: bytes) -> StreamId:
         assert b"-" in id_
         a, b = id_.split(b"-", 1)
+        if b == b"*":
+            return self._generate_sequence_number(a)
+        return self._validate_full_id(a, b)
+
+    def _validate_full_id(self, a: bytes, b: bytes) -> StreamId:
         ai, bi = int(a), int(b)
         new = StreamId(ai, bi)
         if new <= StreamId(0, 0):
@@ -91,9 +99,19 @@ class Stream:
                 )
         return new
 
-    def xadd(self, id_: bytes, kv: list[bytes]) -> bytes:
-        self.l.append(StreamEntry(self._generate_id(id_), kv))
-        return id_
+    def _generate_sequence_number(self, a: bytes) -> StreamId:
+        ai = int(a)
+        old = StreamId(0, 0)
+        if self.l:
+            old = self.l[-1].id
+        if old.time == ai:
+            return StreamId(old.time, old.sequence + 1)
+        return StreamId(ai, 0)
+
+    def xadd(self, id_or_template: bytes, kv: list[bytes]) -> bytes:
+        generated_id = self._generate_id(id_or_template)
+        self.l.append(StreamEntry(generated_id, kv))
+        return bytes(generated_id)
 
 
 type Value = String | List | Stream
@@ -285,11 +303,11 @@ class Storage:
             return SimpleString("none")
         return v.type
 
-    def xadd(self, k: bytes, id_: bytes, kv: list[bytes]) -> bytes:
+    def xadd(self, k: bytes, id_or_template: bytes, kv: list[bytes]) -> bytes:
         if len(kv) % 2:
             raise RedisError(f"key-value list of odd length {kv=}")
 
         v = self.kv.setdefault(k, Stream())
         if not isinstance(v, Stream):
             raise RedisError(f"key {k!r} is not a stream: {v!r}")
-        return v.xadd(id_, kv)
+        return v.xadd(id_or_template, kv)
