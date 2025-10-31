@@ -31,3 +31,4 @@ class Keyword(CaseInsensitiveBytesEnum):
     LLEN = auto()
     LPOP = auto()
     BLPOP = auto()
+    TYPE = auto()

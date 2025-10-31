@@ -1,7 +1,7 @@
 import asyncio
 import functools
 from collections.abc import AsyncGenerator, Generator
-from typing import Final, Sequence
+from typing import Final, Sequence, Self
 
 CRLF: Final = b"\r\n"
 type Command = list[bytes]
@@ -26,6 +26,12 @@ class RedisError(Exception):
         self.message: Final = message
 
 
+class SimpleString(str):
+    def __new__(cls, s: str) -> Self:
+        assert "\n" not in s and "\r" not in s
+        return super().__new__(cls, s)
+
+
 async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
     while True:
         star = await reader.read(1)
@@ -47,13 +53,12 @@ async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
         yield command
 
 
-type Primitive = bytes | NullString | int
+type Primitive = bytes | NullString | int | SimpleString
+type Encodeable = RedisError | Primitive | Sequence[Primitive] | NullArray
 
 
 @functools.singledispatch
-def encode(
-    x: RedisError | Primitive | Sequence[Primitive] | NullArray,
-) -> Generator[bytes]:
+def encode(x: Encodeable) -> Generator[bytes]:
     raise NotImplementedError
 
 
@@ -98,3 +103,10 @@ def _(xs: Sequence[Primitive]) -> Generator[bytes]:
 @encode.register
 def _(x: NullArray) -> Generator[bytes]:
     yield b"*-1\r\n"
+
+
+@encode.register
+def _(x: SimpleString) -> Generator[bytes]:
+    yield b"+"
+    yield x.encode()
+    yield CRLF

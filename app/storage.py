@@ -4,9 +4,9 @@ import dataclasses
 import datetime
 import functools
 import logging
-from typing import Final, Callable, cast
+from typing import Final, Callable, cast, ClassVar
 
-from app.protocol import NullString, RedisError, NullArray
+from app.protocol import NullString, RedisError, NullArray, SimpleString
 
 logger: Final = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -14,11 +14,14 @@ logger: Final = logging.getLogger(__name__)
 
 @dataclasses.dataclass(slots=True, frozen=True)
 class String:
+    type: ClassVar = SimpleString("string")
     v: bytes
     expiration: float | None = None
 
 
 class List:
+    type: ClassVar = SimpleString("list")
+
     def __init__(self) -> None:
         self.l: list[bytes] = []
 
@@ -237,3 +240,9 @@ class Storage:
             return k, done.pop().result()
         self.blocking.remove_block_request(k, request)
         return NullArray()
+
+    def type(self, k: bytes) -> SimpleString:
+        v = self.kv.get(k)
+        if v is None:
+            return SimpleString("none")
+        return v.type

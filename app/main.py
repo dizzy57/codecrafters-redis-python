@@ -7,11 +7,14 @@ from datetime import timedelta
 from typing import Final
 
 from app.keywords import Keyword
-from app.protocol import encode, read_command, RedisError
+from app.protocol import encode, read_command, RedisError, SimpleString, Encodeable
 from app.storage import Storage
 
 logger: Final = logging.getLogger(__name__)
 ctx_client: Final = contextvars.ContextVar("client", default="SERVER")
+
+PONG = SimpleString("PONG")
+OK = SimpleString("OK")
 
 
 class Redis:
@@ -25,47 +28,54 @@ class Redis:
     ) -> None:
         ctx_client.set(f"client={writer.get_extra_info("peername")}")
         logger.info("Client connected")
-        kw = Keyword
         async for command in read_command(reader):
             logger.debug("Received %r", command)
             try:
-                match command:
-                    case [kw.PING]:
-                        writer.write(b"+PONG\r\n")
-                    case [kw.ECHO, x]:
-                        writer.writelines(encode(x))
-                    case [kw.SET, k, x]:
-                        self.storage.set(k, x)
-                        writer.write(b"+OK\r\n")
-                    case [kw.SET, k, x, kw.EX, s]:
-                        self.storage.set(k, x, ttl=timedelta(seconds=int(s)))
-                        writer.write(b"+OK\r\n")
-                    case [kw.SET, k, x, kw.PX, ms]:
-                        self.storage.set(k, x, ttl=timedelta(milliseconds=int(ms)))
-                        writer.write(b"+OK\r\n")
-                    case [kw.GET, k]:
-                        writer.writelines(encode(self.storage.get(k)))
-                    case [kw.RPUSH, k, x, *xs]:
-                        writer.writelines(encode(self.storage.rpush(k, [x, *xs])))
-                    case [kw.LRANGE, k, l, r]:
-                        writer.writelines(encode(self.storage.lrange(k, l, r)))
-                    case [kw.LPUSH, k, x, *xs]:
-                        writer.writelines(encode(self.storage.lpush(k, [x, *xs])))
-                    case [kw.LLEN, k]:
-                        writer.writelines(encode(self.storage.llen(k)))
-                    case [kw.LPOP, k]:
-                        writer.writelines(encode(self.storage.lpop(k)))
-                    case [kw.LPOP, k, n]:
-                        writer.writelines(encode(self.storage.lpop_many(k, n)))
-                    case [kw.BLPOP, k, timeout]:
-                        writer.writelines(encode(await self.storage.blpop(k, timeout)))
-                    case _:
-                        raise RedisError("unknown command")
+                res = await dispatch_command(command, self.storage)
             except RedisError as e:
                 logger.exception("returning error")
-                writer.writelines(encode(e))
+                res = e
+            writer.writelines(encode(res))
             await writer.drain()
         logger.info("Client disconnected")
+
+
+async def dispatch_command(command: list[bytes], storage: Storage) -> Encodeable:
+    kw = Keyword
+    match command:
+        case [kw.PING]:
+            return PONG
+        case [kw.ECHO, x]:
+            return x
+        case [kw.SET, k, x]:
+            storage.set(k, x)
+            return OK
+        case [kw.SET, k, x, kw.EX, s]:
+            storage.set(k, x, ttl=timedelta(seconds=int(s)))
+            return OK
+        case [kw.SET, k, x, kw.PX, ms]:
+            storage.set(k, x, ttl=timedelta(milliseconds=int(ms)))
+            return OK
+        case [kw.GET, k]:
+            return storage.get(k)
+        case [kw.RPUSH, k, x, *xs]:
+            return storage.rpush(k, [x, *xs])
+        case [kw.LRANGE, k, l, r]:
+            return storage.lrange(k, l, r)
+        case [kw.LPUSH, k, x, *xs]:
+            return storage.lpush(k, [x, *xs])
+        case [kw.LLEN, k]:
+            return storage.llen(k)
+        case [kw.LPOP, k]:
+            return storage.lpop(k)
+        case [kw.LPOP, k, n]:
+            return storage.lpop_many(k, n)
+        case [kw.BLPOP, k, timeout]:
+            return await storage.blpop(k, timeout)
+        case [kw.TYPE, k]:
+            return storage.type(k)
+        case _:
+            raise RedisError("unknown command")
 
 
 async def main() -> None:
