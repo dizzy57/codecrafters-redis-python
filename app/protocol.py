@@ -78,7 +78,7 @@ def _(x: NullString) -> Generator[bytes]:
 
 @encode.register
 def _(x: RedisError) -> Generator[bytes]:
-    yield b"-ERR"
+    yield b"-ERR "
     yield x.message.encode()
     yield CRLF
 

@@ -58,9 +58,15 @@ class List:
         return not self.l
 
 
+@dataclasses.dataclass(frozen=True, slots=True, order=True)
+class StreamId:
+    time: int
+    sequence: int
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class StreamEntry:
-    id: bytes
+    id: StreamId
     kv: list[bytes]
 
 
@@ -70,8 +76,23 @@ class Stream:
     def __init__(self) -> None:
         self.l: list[StreamEntry] = []
 
+    def _generate_id(self, id_: bytes) -> StreamId:
+        assert b"-" in id_
+        a, b = id_.split(b"-", 1)
+        ai, bi = int(a), int(b)
+        new = StreamId(ai, bi)
+        if new <= StreamId(0, 0):
+            raise RedisError("The ID specified in XADD must be greater than 0-0")
+        if self.l:
+            old = self.l[-1].id
+            if new <= old:
+                raise RedisError(
+                    "The ID specified in XADD is equal or smaller than the target stream top item"
+                )
+        return new
+
     def xadd(self, id_: bytes, kv: list[bytes]) -> bytes:
-        self.l.append(StreamEntry(id_, kv))
+        self.l.append(StreamEntry(self._generate_id(id_), kv))
         return id_
 
 
