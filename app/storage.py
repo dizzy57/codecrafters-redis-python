@@ -4,6 +4,7 @@ import dataclasses
 import datetime
 import functools
 import logging
+import time
 from typing import Final, Callable, cast, ClassVar
 
 from app.protocol import NullString, RedisError, NullArray, SimpleString
@@ -79,9 +80,12 @@ class Stream:
     def __init__(self) -> None:
         self.l: list[StreamEntry] = []
 
-    def _generate_id(self, id_: bytes) -> StreamId:
-        assert b"-" in id_
-        a, b = id_.split(b"-", 1)
+    def _generate_id(self, id_or_template: bytes) -> StreamId:
+        if id_or_template == b"*":
+            now = int(time.time() * 1000)
+            return self._generate_sequence_number(now)
+        assert b"-" in id_or_template
+        a, b = id_or_template.split(b"-", 1)
         if b == b"*":
             return self._generate_sequence_number(a)
         return self._validate_full_id(a, b)
@@ -99,12 +103,12 @@ class Stream:
                 )
         return new
 
-    def _generate_sequence_number(self, a: bytes) -> StreamId:
+    def _generate_sequence_number(self, a: bytes | int) -> StreamId:
         ai = int(a)
         old = StreamId(0, 0)
         if self.l:
             old = self.l[-1].id
-        if old.time == ai:
+        if old.time >= ai:
             return StreamId(old.time, old.sequence + 1)
         return StreamId(ai, 0)
 
