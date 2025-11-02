@@ -14,6 +14,8 @@ from app.protocol import NullString, RedisError, NullArray, SimpleString
 logger: Final = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 
+type StreamOutput = list[tuple[bytes, list[bytes]]]
+
 
 @dataclasses.dataclass(slots=True, frozen=True)
 class String:
@@ -76,6 +78,14 @@ class StreamEntry:
     kv: list[bytes]
 
 
+def entry_id(x: StreamEntry) -> StreamId:
+    return x.id
+
+
+def entry_id_time(x: StreamEntry) -> int:
+    return x.id.time
+
+
 class Stream:
     type: ClassVar = SimpleString("stream")
 
@@ -119,31 +129,33 @@ class Stream:
         self.l.append(StreamEntry(generated_id, kv))
         return bytes(generated_id)
 
-    def xrange(self, start: bytes, end: bytes) -> list[tuple[bytes, list[bytes]]]:
-        get_id: Callable[[StreamEntry], StreamId] = lambda x: x.id
-        get_id_time: Callable[[StreamEntry], int] = lambda x: x.id.time
+    def xrange(self, start: bytes, end: bytes) -> StreamOutput:
 
         if start == b"-":
             start_idx = 0
         elif b"-" not in start:
             start_time = int(start)
-            start_idx = bisect.bisect_left(self.l, start_time, key=get_id_time)
-
+            start_idx = bisect.bisect_left(self.l, start_time, key=entry_id_time)
         else:
             start_id = StreamId(*map(int, start.split(b"-", 1)))
-            start_idx = bisect.bisect_left(self.l, start_id, key=get_id)
+            start_idx = bisect.bisect_left(self.l, start_id, key=entry_id)
 
         if end == b"+":
             end_idx = None
         elif b"-" not in end:
             end_time = int(end)
-            end_idx = bisect.bisect_right(self.l, end_time, key=get_id_time)
+            end_idx = bisect.bisect_right(self.l, end_time, key=entry_id_time)
         else:
             end_id = StreamId(*map(int, end.split(b"-", 1)))
-            end_idx = bisect.bisect_right(self.l, end_id, key=get_id)
+            end_idx = bisect.bisect_right(self.l, end_id, key=entry_id)
         return [
             (bytes(x.id), x.kv) for x in itertools.islice(self.l, start_idx, end_idx)
         ]
+
+    def xread(self, start: bytes) -> StreamOutput:
+        start_id = StreamId(*map(int, start.split(b"-", 1)))
+        start_idx = bisect.bisect_right(self.l, start_id, key=entry_id)
+        return [(bytes(x.id), x.kv) for x in itertools.islice(self.l, start_idx, None)]
 
 
 type Value = String | List | Stream
@@ -344,10 +356,14 @@ class Storage:
             raise RedisError(f"key {k!r} is not a stream: {v!r}")
         return v.xadd(id_or_template, kv)
 
-    def xrange(
-        self, k: bytes, start: bytes, end: bytes
-    ) -> list[tuple[bytes, list[bytes]]]:
+    def xrange(self, k: bytes, start: bytes, end: bytes) -> StreamOutput:
         v = self.kv.setdefault(k, Stream())
         if not isinstance(v, Stream):
             raise RedisError(f"key {k!r} is not a stream: {v!r}")
         return v.xrange(start, end)
+
+    def xread(self, k: bytes, start: bytes) -> list[tuple[bytes, StreamOutput]]:
+        v = self.kv.setdefault(k, Stream())
+        if not isinstance(v, Stream):
+            raise RedisError(f"key {k!r} is not a stream: {v!r}")
+        return [(k, v.xread(start))]

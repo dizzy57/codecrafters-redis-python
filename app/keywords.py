@@ -34,3 +34,5 @@ class Keyword(CaseInsensitiveBytesEnum):
     TYPE = auto()
     XADD = auto()
     XRANGE = auto()
+    XREAD = auto()
+    STREAMS = auto()
