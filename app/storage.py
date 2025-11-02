@@ -122,12 +122,15 @@ class Stream:
     def xrange(self, start: bytes, end: bytes) -> list[tuple[bytes, list[bytes]]]:
         get_id: Callable[[StreamEntry], StreamId] = lambda x: x.id
         get_id_time: Callable[[StreamEntry], int] = lambda x: x.id.time
-        
-        if b"-" not in start:
-            start_id = StreamId(int(start), 0)
+
+        if start == b"-":
+            start_idx = 0
         else:
-            start_id = StreamId(*map(int, start.split(b"-", 1)))
-        start_idx = bisect.bisect_left(self.l, start_id, key=get_id)
+            if b"-" not in start:
+                start_id = StreamId(int(start), 0)
+            else:
+                start_id = StreamId(*map(int, start.split(b"-", 1)))
+            start_idx = bisect.bisect_left(self.l, start_id, key=get_id)
 
         if b"-" not in end:
             end_time = int(end)
