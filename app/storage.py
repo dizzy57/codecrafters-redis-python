@@ -357,13 +357,23 @@ class Storage:
         return v.xadd(id_or_template, kv)
 
     def xrange(self, k: bytes, start: bytes, end: bytes) -> StreamOutput:
-        v = self.kv.setdefault(k, Stream())
+        v = self.kv.get(k)
         if not isinstance(v, Stream):
             raise RedisError(f"key {k!r} is not a stream: {v!r}")
         return v.xrange(start, end)
 
-    def xread(self, k: bytes, start: bytes) -> list[tuple[bytes, StreamOutput]]:
-        v = self.kv.setdefault(k, Stream())
-        if not isinstance(v, Stream):
-            raise RedisError(f"key {k!r} is not a stream: {v!r}")
-        return [(k, v.xread(start))]
+    def xread(self, keys_and_starts: list[bytes]) -> list[tuple[bytes, StreamOutput]]:
+        if len(keys_and_starts) % 2:
+            raise RedisError(f"key-id list of odd length {keys_and_starts=}")
+        n = len(keys_and_starts) // 2
+
+        result = []
+        for k, start in zip(
+            itertools.islice(keys_and_starts, n),
+            itertools.islice(keys_and_starts, n, None),
+        ):
+            v = self.kv.get(k)
+            if not isinstance(v, Stream):
+                raise RedisError(f"key {k!r} is not a stream: {v!r}")
+            result.append((k, v.xread(start)))
+        return result
