@@ -54,7 +54,7 @@ async def read_command(reader: asyncio.StreamReader) -> AsyncGenerator[Command]:
 
 
 type Primitive = bytes | NullString | int | SimpleString
-type Encodeable = RedisError | Primitive | Sequence[Primitive] | NullArray
+type Encodeable = RedisError | Primitive | Sequence[Encodeable] | NullArray
 
 
 @functools.singledispatch

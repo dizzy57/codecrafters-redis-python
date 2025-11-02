@@ -77,6 +77,8 @@ async def dispatch_command(command: list[bytes], storage: Storage) -> Encodeable
             return storage.type(k)
         case [kw.XADD, k, id_or_template, *kv]:
             return storage.xadd(k, id_or_template, kv)
+        case [kw.XRANGE, k, start, end]:
+            return storage.xrange(k, start, end)
         case _:
             raise RedisError("unknown command")
 

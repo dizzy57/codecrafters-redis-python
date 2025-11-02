@@ -1,8 +1,10 @@
 import abc
 import asyncio
+import bisect
 import dataclasses
 import datetime
 import functools
+import itertools
 import logging
 import time
 from typing import Final, Callable, cast, ClassVar
@@ -116,6 +118,26 @@ class Stream:
         generated_id = self._generate_id(id_or_template)
         self.l.append(StreamEntry(generated_id, kv))
         return bytes(generated_id)
+
+    def xrange(self, start: bytes, end: bytes) -> list[tuple[bytes, list[bytes]]]:
+        get_id: Callable[[StreamEntry], StreamId] = lambda x: x.id
+        get_id_time: Callable[[StreamEntry], int] = lambda x: x.id.time
+        
+        if b"-" not in start:
+            start_id = StreamId(int(start), 0)
+        else:
+            start_id = StreamId(*map(int, start.split(b"-", 1)))
+        start_idx = bisect.bisect_left(self.l, start_id, key=get_id)
+
+        if b"-" not in end:
+            end_time = int(end)
+            end_idx = bisect.bisect_right(self.l, end_time, key=get_id_time)
+        else:
+            end_id = StreamId(*map(int, end.split(b"-", 1)))
+            end_idx = bisect.bisect_right(self.l, end_id, key=get_id)
+        return [
+            (bytes(x.id), x.kv) for x in itertools.islice(self.l, start_idx, end_idx)
+        ]
 
 
 type Value = String | List | Stream
@@ -315,3 +337,11 @@ class Storage:
         if not isinstance(v, Stream):
             raise RedisError(f"key {k!r} is not a stream: {v!r}")
         return v.xadd(id_or_template, kv)
+
+    def xrange(
+        self, k: bytes, start: bytes, end: bytes
+    ) -> list[tuple[bytes, list[bytes]]]:
+        v = self.kv.setdefault(k, Stream())
+        if not isinstance(v, Stream):
+            raise RedisError(f"key {k!r} is not a stream: {v!r}")
+        return v.xrange(start, end)
