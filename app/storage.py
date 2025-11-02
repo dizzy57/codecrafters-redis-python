@@ -125,14 +125,17 @@ class Stream:
 
         if start == b"-":
             start_idx = 0
+        elif b"-" not in start:
+            start_time = int(start)
+            start_idx = bisect.bisect_left(self.l, start_time, key=get_id_time)
+
         else:
-            if b"-" not in start:
-                start_id = StreamId(int(start), 0)
-            else:
-                start_id = StreamId(*map(int, start.split(b"-", 1)))
+            start_id = StreamId(*map(int, start.split(b"-", 1)))
             start_idx = bisect.bisect_left(self.l, start_id, key=get_id)
 
-        if b"-" not in end:
+        if end == b"+":
+            end_idx = None
+        elif b"-" not in end:
             end_time = int(end)
             end_idx = bisect.bisect_right(self.l, end_time, key=get_id_time)
         else:
