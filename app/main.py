@@ -80,7 +80,9 @@ async def dispatch_command(command: list[bytes], storage: Storage) -> Encodeable
         case [kw.XRANGE, k, start, end]:
             return storage.xrange(k, start, end)
         case [kw.XREAD, kw.STREAMS, *keys_and_starts]:
-            return storage.xread(keys_and_starts)
+            return await storage.xread(keys_and_starts)
+        case [kw.XREAD, kw.BLOCK, block, kw.STREAMS, *keys_and_starts]:
+            return await storage.xread(keys_and_starts, block=block)
         case _:
             raise RedisError("unknown command")
 

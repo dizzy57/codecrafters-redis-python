@@ -36,3 +36,4 @@ class Keyword(CaseInsensitiveBytesEnum):
     XRANGE = auto()
     XREAD = auto()
     STREAMS = auto()
+    BLOCK = auto()

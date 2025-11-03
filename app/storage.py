@@ -91,6 +91,7 @@ class Stream:
 
     def __init__(self) -> None:
         self.l: list[StreamEntry] = []
+        self.ev = asyncio.Event()
 
     def _generate_id(self, id_or_template: bytes) -> StreamId:
         if id_or_template == b"*":
@@ -127,10 +128,11 @@ class Stream:
     def xadd(self, id_or_template: bytes, kv: list[bytes]) -> bytes:
         generated_id = self._generate_id(id_or_template)
         self.l.append(StreamEntry(generated_id, kv))
+        self.ev.set()
+        self.ev.clear()
         return bytes(generated_id)
 
     def xrange(self, start: bytes, end: bytes) -> StreamOutput:
-
         if start == b"-":
             start_idx = 0
         elif b"-" not in start:
@@ -362,12 +364,15 @@ class Storage:
             raise RedisError(f"key {k!r} is not a stream: {v!r}")
         return v.xrange(start, end)
 
-    def xread(self, keys_and_starts: list[bytes]) -> list[tuple[bytes, StreamOutput]]:
+    async def xread(
+        self, keys_and_starts: list[bytes], block: bytes | None = None
+    ) -> list[tuple[bytes, StreamOutput]] | NullArray:
         if len(keys_and_starts) % 2:
             raise RedisError(f"key-id list of odd length {keys_and_starts=}")
         n = len(keys_and_starts) // 2
 
         result = []
+        evs = []
         for k, start in zip(
             itertools.islice(keys_and_starts, n),
             itertools.islice(keys_and_starts, n, None),
@@ -375,5 +380,17 @@ class Storage:
             v = self.kv.get(k)
             if not isinstance(v, Stream):
                 raise RedisError(f"key {k!r} is not a stream: {v!r}")
-            result.append((k, v.xread(start)))
-        return result
+            res = v.xread(start)
+            if res:
+                result.append((k, res))
+            else:
+                evs.append(v.ev)
+        if result or block is None:
+            return result
+
+        tasks = [asyncio.create_task(ev.wait()) for ev in evs]
+        timeout = datetime.timedelta(milliseconds=int(block))
+        done, pending = await asyncio.wait(tasks, timeout=timeout.total_seconds())
+        if done:
+            return await self.xread(keys_and_starts)
+        return NullArray()
