@@ -389,8 +389,12 @@ class Storage:
             return result
 
         tasks = [asyncio.create_task(ev.wait()) for ev in evs]
-        timeout = datetime.timedelta(milliseconds=int(block))
-        done, pending = await asyncio.wait(tasks, timeout=timeout.total_seconds())
+        if block == b"0":
+            timeout = None
+        else:
+            timeout = datetime.timedelta(milliseconds=int(block)).total_seconds()
+
+        done, pending = await asyncio.wait(tasks, timeout=timeout)
         if done:
             return await self.xread(keys_and_starts)
         return NullArray()
