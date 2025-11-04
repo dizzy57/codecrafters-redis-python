@@ -159,6 +159,11 @@ class Stream:
         start_idx = bisect.bisect_right(self.l, start_id, key=entry_id)
         return [(bytes(x.id), x.kv) for x in itertools.islice(self.l, start_idx, None)]
 
+    def last_id(self) -> StreamId:
+        if not self.l:
+            return StreamId(0, 0)
+        return self.l[-1].id
+
 
 type Value = String | List | Stream
 
@@ -371,30 +376,52 @@ class Storage:
             raise RedisError(f"key-id list of odd length {keys_and_starts=}")
         n = len(keys_and_starts) // 2
 
-        result = []
-        evs = []
-        for k, start in zip(
-            itertools.islice(keys_and_starts, n),
-            itertools.islice(keys_and_starts, n, None),
-        ):
-            v = self.kv.get(k)
-            if not isinstance(v, Stream):
-                raise RedisError(f"key {k!r} is not a stream: {v!r}")
-            res = v.xread(start)
-            if res:
-                result.append((k, res))
-            else:
-                evs.append(v.ev)
-        if result or block is None:
-            return result
+        streams_starts = dict(
+            zip(
+                itertools.islice(keys_and_starts, n),
+                itertools.islice(keys_and_starts, n, None),
+            )
+        )
 
-        tasks = [asyncio.create_task(ev.wait()) for ev in evs]
+        read, unread = self._xread_sync(streams_starts)
+        if read or block is None:
+            return read
+
+        tasks = {
+            asyncio.create_task(ev.wait()): key_start
+            for ev, key_start in unread.items()
+        }
+
         if block == b"0":
             timeout = None
         else:
             timeout = datetime.timedelta(milliseconds=int(block)).total_seconds()
 
-        done, pending = await asyncio.wait(tasks, timeout=timeout)
+        done, _ = await asyncio.wait(tasks, timeout=timeout)
         if done:
-            return await self.xread(keys_and_starts)
+            streams_starts = dict(tasks[x] for x in done)
+            read, _ = self._xread_sync(streams_starts)
+            return read
+
         return NullArray()
+
+    def _xread_sync(self, streams_starts: dict[bytes, bytes]) -> tuple[
+        list[tuple[bytes, StreamOutput]],
+        dict[asyncio.Event, tuple[bytes, bytes]],
+    ]:
+        read = []
+        unread = {}
+        for k, start in streams_starts.items():
+            v = self.kv.get(k)
+            if not isinstance(v, Stream):
+                raise RedisError(f"key {k!r} is not a stream: {v!r}")
+            if start != b"$":
+                res = v.xread(start)
+                if res:
+                    read.append((k, res))
+                else:
+                    unread[v.ev] = (k, start)
+            else:
+                unread[v.ev] = (k, bytes(v.last_id()))
+
+        return read, unread
